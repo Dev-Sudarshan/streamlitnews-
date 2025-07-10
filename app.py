@@ -5,10 +5,11 @@ import os
 import requests
 import json
 from tempfile import NamedTemporaryFile
-import subprocess
 
-ffmpeg_path = r"D:\ffmpeg-7.1.1-essentials_build\bin\ffmpeg.exe"
-ffmpeg_command = [ffmpeg_path, "-i", "input.mp4", "output.mp3"]
+ffmpeg_bin = r"D:\ffmpeg-7.1.1-essentials_build\bin"
+ffmpeg_path = os.path.join(ffmpeg_bin, "ffmpeg.exe")
+os.environ["PATH"] += os.pathsep + ffmpeg_bin
+
 st.set_page_config(page_title="🎤 Video to News Article Generator")
 
 st.title("📹 Video to 📰 News Article Generator")
@@ -63,7 +64,7 @@ if video_file is not None:
                 "content": transcript
             }
         ],
-        "max_tokens": 4000
+        "max_tokens": 40
     }
 
     response = requests.post(url, headers=headers, data=json.dumps(payload))
