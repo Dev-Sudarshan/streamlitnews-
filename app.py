@@ -1,80 +1,133 @@
 import streamlit as st
+import os
+import cv2
 import whisper
 import subprocess
-import os
+import base64
 import requests
 import json
 from tempfile import NamedTemporaryFile
 
-# Set ffmpeg path
-ffmpeg_bin = r"D:\ffmpeg-7.1.1-essentials_build\bin"
-ffmpeg_path = os.path.join(ffmpeg_bin, "ffmpeg.exe")
-os.environ["PATH"] += os.pathsep + ffmpeg_bin
+# --- Settings ---
+API_KEY = "9950e10d61694f288b5015e16c86112c"
+DEPLOYMENT_URL = "https://api.turboline.ai/coreai/deployments/model-router/chat/completions?api-version=2025-01-01-preview"
+HEADERS = {
+    "Content-Type": "application/json",
+    "tl-key": API_KEY
+}
+FFMPEG_PATH = r"D:\ffmpeg-7.1.1-essentials_build\bin\ffmpeg.exe"
+os.environ["PATH"] += os.pathsep + os.path.dirname(FFMPEG_PATH)
 
-# Set Streamlit page settings
-st.set_page_config(page_title="🎤 Sports Video to News Article")
+# --- Streamlit UI ---
+st.set_page_config(page_title="Sports Video to News Generator")
+st.title("🏆 Sports Video ➤ News Article Generator")
+st.markdown("Upload a sports video, and this tool will analyze frames and audio to generate a professional news article.")
 
-st.title("🏆 Sports Video to 📰 News Article Generator")
-st.markdown("Upload a sports video file and this will turn it into a news article.")
+video_file = st.file_uploader("📤 Upload Sports Video", type=["mp4", "mkv", "mov", "avi"])
 
-# Upload video
-video_file = st.file_uploader("📤 Upload your sports video (.mp4, .mkv, etc.)", type=["mp4", "mkv", "mov", "avi"])
+# --- Functions ---
+def extract_frames(video_path, output_folder, frame_rate=1):
+    os.makedirs(output_folder, exist_ok=True)
+    vidcap = cv2.VideoCapture(video_path)
+    fps = vidcap.get(cv2.CAP_PROP_FPS)
+    frame_interval = int(fps * frame_rate) if fps > 0 else 30
 
+    count = 0
+    saved_count = 0
+    success, image = vidcap.read()
+    while success:
+        if count % frame_interval == 0:
+            frame_filename = os.path.join(output_folder, f"frame_{saved_count:04d}.jpg")
+            cv2.imwrite(frame_filename, image)
+            saved_count += 1
+        success, image = vidcap.read()
+        count += 1
+    vidcap.release()
+    return [os.path.join(output_folder, f) for f in sorted(os.listdir(output_folder)) if f.endswith(".jpg")]
+
+def analyze_image(image_path):
+    with open(image_path, "rb") as f:
+        img_base64 = base64.b64encode(f.read()).decode('utf-8')
+    payload = {
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Describe what is happening in this image."},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_base64}"}}
+                ]
+            }
+        ],
+        "max_tokens": 400
+    }
+    response = requests.post(DEPLOYMENT_URL, headers=HEADERS, data=json.dumps(payload))
+    if response.status_code == 200:
+        return response.json()['choices'][0]['message']['content']
+    else:
+        return f"[Error analyzing image: {response.status_code}]"
+
+def transcribe_audio(video_path, audio_output):
+    ffmpeg_command = [
+        FFMPEG_PATH, "-y", "-i", video_path,
+        "-vn", "-acodec", "pcm_s16le",
+        "-ar", "16000", "-ac", "1", audio_output
+    ]
+    subprocess.run(ffmpeg_command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    model = whisper.load_model("medium")
+    result = model.transcribe(audio_output)
+    return result["text"].strip()
+
+def generate_combined_article(transcript, image_descriptions):
+    combined_info = "\n".join(image_descriptions)
+    prompt = f"""
+You are a world-class sports journalist working for a top publication. Your task is to write a compelling news article based on both a transcript of a sports video and descriptions of key image frames extracted from it.
+
+First, read the transcript:
+\"\"\"{transcript}\"\"\"
+
+Then, consider the visual descriptions:
+\"\"\"{combined_info}\"\"\"
+
+Use both to create a rich and concise news article. Focus on the most important and relevant moments from both. Include a strong headline, a lead, match summary, key moments, turning points, and standout performances. Maintain a journalistic tone, avoid filler, and keep it exciting and informative.
+"""
+    payload = {
+        "messages": [
+            {"role": "user", "content": prompt}
+        ],
+        "max_tokens": 2000
+    }
+    response = requests.post(DEPLOYMENT_URL, headers=HEADERS, data=json.dumps(payload))
+    if response.status_code == 200:
+        return response.json()['choices'][0]['message']['content']
+    else:
+        return f"[Error generating article: {response.status_code}]"
+
+# --- Main Execution ---
 if video_file is not None:
     with NamedTemporaryFile(delete=False, suffix=".mp4") as temp_video:
         temp_video.write(video_file.read())
         video_path = temp_video.name
 
-    # Extract audio using ffmpeg
-    audio_path = "audio.wav"
-    st.info("🔊 Extracting audio...")
-    ffmpeg_command = [
-        ffmpeg_path, "-y", "-i", video_path,
-        "-vn", "-acodec", "pcm_s16le",
-        "-ar", "16000", "-ac", "1", audio_path
-    ]
-    subprocess.run(ffmpeg_command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    st.info("🎞️ Extracting frames from video...")
+    frames_folder = "extracted_frames"
+    frame_files = extract_frames(video_path, frames_folder, frame_rate=1)
 
-    # Transcribe with Whisper
-    st.info("🧠 Transcribing audio...")
-    model = whisper.load_model("medium")
-    result = model.transcribe(audio_path)
-    transcript = result["text"].strip()
+    st.info("🖼️ Analyzing image frames...")
+    image_descriptions = []
+    for i, frame in enumerate(frame_files[:6]):  # limit to 6 frames for speed
+        st.text(f"Analyzing Frame {i+1}/{min(6, len(frame_files))}")
+        image_descriptions.append(analyze_image(frame))
 
-    # Generate news article using GPT-4
-    st.info("📝 Generating news article...")
+    st.info("🎧 Extracting and transcribing audio...")
+    audio_path = "temp_audio.wav"
+    transcript = transcribe_audio(video_path, audio_path)
 
-    url = "https://api.turboline.ai/coreai/deployments/model-router/chat/completions?api-version=2025-01-01-preview"
-    headers = {
-        "Content-Type": "application/json",
-        "Cache-Control": "no-cache",
-        "tl-key": "9950e10d61694f288b5015e16c86112c"
-    }
+    st.info("📝 Generating final news article...")
+    article = generate_combined_article(transcript, image_descriptions)
 
-    payload = {
-        "messages": [
-            {
-                "role": "system",
-                "content": "You are a world-class sports journalist working for a top international publication. Your job is to craft a compelling, clear, and concise news article based on a raw transcript from a sports event video. Focus on accuracy, tone, and storytelling. Structure the article like a professional report: include a headline, a strong lead, key highlights of the event, and any standout performances, controversies, or turning points. Avoid fluff and filler — prioritize factual reporting with a journalistic tone and a narrative style that engages the reader. Use relevant sports terminology appropriately, and maintain objectivity while making the article exciting and readable. Your writing should feel like it belongs on the front page of a major sports news site."
-            },
-            {
-                "role": "user",
-                "content": transcript
-            }
-        ],
-        "max_tokens": 4000
-    }
+    st.subheader("📰 Final Generated News Article")
+    st.write(article)
 
-    response = requests.post(url, headers=headers, data=json.dumps(payload))
-
-    if response.status_code == 200:
-        article = response.json()['choices'][0]['message']['content']
-        st.subheader("📰 Generated News Article")
-        st.write(article)
-    else:
-        st.error(f"❌ Error {response.status_code}: {response.text}")
-
-    # Clean up temp files
     os.remove(video_path)
     if os.path.exists(audio_path):
         os.remove(audio_path)
