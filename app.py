@@ -6,17 +6,19 @@ import requests
 import json
 from tempfile import NamedTemporaryFile
 
+# Set ffmpeg path
 ffmpeg_bin = r"D:\ffmpeg-7.1.1-essentials_build\bin"
 ffmpeg_path = os.path.join(ffmpeg_bin, "ffmpeg.exe")
 os.environ["PATH"] += os.pathsep + ffmpeg_bin
 
-st.set_page_config(page_title="🎤 Video to News Article Generator")
+# Set Streamlit page settings
+st.set_page_config(page_title="🎤 Sports Video to News Article")
 
-st.title("📹 Video to 📰 News Article Generator")
-st.markdown("Upload a video file, and this app will transcribe it and turn the transcript into a news article using GPT-4!")
+st.title("🏆 Sports Video to 📰 News Article Generator")
+st.markdown("Upload a sports video file and this will turn it into a news article.")
 
 # Upload video
-video_file = st.file_uploader("📤 Upload your video (.mp4, .mkv, etc.)", type=["mp4", "mkv", "mov", "avi"])
+video_file = st.file_uploader("📤 Upload your sports video (.mp4, .mkv, etc.)", type=["mp4", "mkv", "mov", "avi"])
 
 if video_file is not None:
     with NamedTemporaryFile(delete=False, suffix=".mp4") as temp_video:
@@ -25,7 +27,7 @@ if video_file is not None:
 
     # Extract audio using ffmpeg
     audio_path = "audio.wav"
-    st.info("🎧 Extracting audio...")
+    st.info("🔊 Extracting audio...")
     ffmpeg_command = [
         ffmpeg_path, "-y", "-i", video_path,
         "-vn", "-acodec", "pcm_s16le",
@@ -33,18 +35,14 @@ if video_file is not None:
     ]
     subprocess.run(ffmpeg_command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-    # Load Whisper model
-    st.info("🧠 Transcribing with Whisper model (this may take a while)...")
+    # Transcribe with Whisper
+    st.info("🧠 Transcribing audio...")
     model = whisper.load_model("medium")
     result = model.transcribe(audio_path)
     transcript = result["text"].strip()
 
-    # Show transcript
-    st.subheader("📝 Transcription")
-    st.text_area("Transcript", transcript, height=200)
-
-    # GPT-4 API call
-    st.info("✍️ Generating news article with GPT-4...")
+    # Generate news article using GPT-4
+    st.info("📝 Generating news article...")
 
     url = "https://api.turboline.ai/coreai/deployments/model-router/chat/completions?api-version=2025-01-01-preview"
     headers = {
@@ -57,14 +55,14 @@ if video_file is not None:
         "messages": [
             {
                 "role": "system",
-                "content": "You are a professional news article writer. Based on the transcript provided, generate a clear, concise, and engaging news article."
+                "content": "You are a world-class sports journalist working for a top international publication. Your job is to craft a compelling, clear, and concise news article based on a raw transcript from a sports event video. Focus on accuracy, tone, and storytelling. Structure the article like a professional report: include a headline, a strong lead, key highlights of the event, and any standout performances, controversies, or turning points. Avoid fluff and filler — prioritize factual reporting with a journalistic tone and a narrative style that engages the reader. Use relevant sports terminology appropriately, and maintain objectivity while making the article exciting and readable. Your writing should feel like it belongs on the front page of a major sports news site."
             },
             {
                 "role": "user",
                 "content": transcript
             }
         ],
-        "max_tokens": 40
+        "max_tokens": 4000
     }
 
     response = requests.post(url, headers=headers, data=json.dumps(payload))
