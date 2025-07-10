@@ -114,8 +114,7 @@ if video_file is not None:
 
     st.info("🖼️ Analyzing image frames...")
     image_descriptions = []
-    for i, frame in enumerate(frame_files[:6]):  # limit to 6 frames for speed
-        st.text(f"Analyzing Frame {i+1}/{min(6, len(frame_files))}")
+    for frame in frame_files[:6]:  # Limit to 6 frames for speed
         image_descriptions.append(analyze_image(frame))
 
     st.info("🎧 Extracting and transcribing audio...")
