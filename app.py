@@ -80,21 +80,21 @@ def transcribe_audio(video_path, audio_output):
 def generate_combined_article(transcript, image_descriptions):
     combined_info = "\n".join(image_descriptions)
     prompt = f"""
-You are a world-class sports journalist working for a top publication. Your task is to write a compelling news article based on both a transcript of a sports video and descriptions of key image frames extracted from it.
+Write a news article using only the information provided below. Do not assume or imagine any details. Stick strictly to the facts described in the transcript and image descriptions. Do not add any external context or interpretation.
 
-First, read the transcript:
+Transcript:
 \"\"\"{transcript}\"\"\"
 
-Then, consider the visual descriptions:
+Image Descriptions:
 \"\"\"{combined_info}\"\"\"
 
-Use both to create a rich and concise news article. Focus on the most important and relevant moments from both. Include a strong headline, a lead, match summary, key moments, turning points, and standout performances. Maintain a journalistic tone, avoid filler, and keep it exciting and informative.
+Use this content to write a factual, concise, and objective news article. Include a headline and organize the information clearly. Only include points that are explicitly mentioned in the text or image descriptions.
 """
     payload = {
         "messages": [
             {"role": "user", "content": prompt}
         ],
-        "max_tokens": 2000
+        "max_tokens": 200
     }
     response = requests.post(DEPLOYMENT_URL, headers=HEADERS, data=json.dumps(payload))
     if response.status_code == 200:
