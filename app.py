@@ -333,7 +333,52 @@ Write the article now:
     
     return "[Error generating article]"
 
+def edit_article_with_prompt(original_article, user_prompt):
+    """Edit the generated article based on user's custom prompt"""
+    prompt = f"""
+You are a professional sports news editor. Edit the following article based on the user's specific request.
+
+ORIGINAL ARTICLE:
+{original_article}
+
+USER'S EDITING REQUEST:
+{user_prompt}
+
+KEY INSTRUCTIONS:
+- Follow the user's editing request precisely
+- Maintain the factual accuracy of the original content
+- Keep it professional and news-appropriate
+- If the request asks for information not in the original article, politely mention that the information is not available
+- Return only the edited article, no additional commentary
+
+EDITED ARTICLE:
+"""
+    
+    payload = {
+        "messages": [
+            {"role": "user", "content": prompt}
+        ],
+        "max_tokens": 600
+    }
+    
+    try:
+        response = requests.post(DEPLOYMENT_URL, headers=HEADERS, data=json.dumps(payload))
+        if response.status_code == 200:
+            return response.json()['choices'][0]['message']['content']
+    except Exception as e:
+        st.error(f"Error editing article: {str(e)}")
+    
+    return "[Error editing article]"
+
 # --- Main Execution ---
+# Initialize session state for article storage
+if 'generated_article' not in st.session_state:
+    st.session_state.generated_article = None
+if 'article_image' not in st.session_state:
+    st.session_state.article_image = None
+if 'article_caption' not in st.session_state:
+    st.session_state.article_caption = None
+
 # Handle video upload
 if video_file is not None:
     with NamedTemporaryFile(delete=False, suffix=".mp4") as temp_video:
@@ -363,17 +408,11 @@ if video_file is not None:
                 st.info("📝 Generating article...")
                 article = generate_article(transcript, all_frame_data, global_best_frame)
                 
-                # Display results - Clean output only
-                st.subheader("📰 Generated News Article")
-                
+                # Store in session state
+                st.session_state.generated_article = article
                 if global_best_frame:
-                    st.image(global_best_frame['image_path'], use_container_width=True)
-                    
-                    # Generate short caption for the frame
-                    short_caption = generate_short_caption(global_best_frame['description'])
-                    st.caption(short_caption)
-                
-                st.write(article)
+                    st.session_state.article_image = global_best_frame['image_path']
+                    st.session_state.article_caption = generate_short_caption(global_best_frame['description'])
                 
                 # Cleanup
                 if os.path.exists(audio_path):
@@ -399,12 +438,101 @@ if generate_from_text and raw_match_data.strip():
     try:
         article = generate_article_from_text(raw_match_data)
         
-        # Display results - Clean output only
-        st.subheader("📰 Generated News Article")
-        st.write(article)
+        # Store in session state
+        st.session_state.generated_article = article
+        st.session_state.article_image = None
+        st.session_state.article_caption = None
         
     except Exception as e:
         st.error(f"An error occurred: {str(e)}")
 
 elif generate_from_text and not raw_match_data.strip():
     st.warning("Please enter some match data in the text area.")
+
+# Display generated article and editor
+if st.session_state.generated_article:
+    st.subheader("📰 Generated News Article")
+    
+    # Display image if available
+    if st.session_state.article_image and os.path.exists(st.session_state.article_image):
+        st.image(st.session_state.article_image, use_container_width=True)
+        if st.session_state.article_caption:
+            st.caption(st.session_state.article_caption)
+    
+    # Display the article
+    st.write(st.session_state.generated_article)
+    
+    # Article Editor Section
+    st.markdown("---")
+    st.subheader("✏️ Edit Article")
+    st.markdown("Want to modify the article? Enter your editing instructions below:")
+    
+    # Create columns for better layout
+    col1, col2 = st.columns([3, 1])
+    
+    with col1:
+        edit_prompt = st.text_area(
+            "Enter your editing instructions:",
+            placeholder="Examples:\n• Make it more formal\n• Add more details about the players\n• Make it shorter\n• Change the tone to be more exciting\n• Focus more on the team statistics\n• Rewrite the headline",
+            height=100,
+            key="edit_prompt"
+        )
+    
+    with col2:
+        st.markdown("<br>", unsafe_allow_html=True)  # Add some spacing
+        edit_button = st.button("🔄 Edit Article", type="primary")
+        
+        # Reset button to restore original
+        if st.button("↩️ Reset to Original"):
+            st.rerun()
+    
+    # Handle article editing
+    if edit_button and edit_prompt.strip():
+        with st.spinner("✏️ Editing article..."):
+            try:
+                edited_article = edit_article_with_prompt(st.session_state.generated_article, edit_prompt)
+                
+                # Update session state with edited article
+                st.session_state.generated_article = edited_article
+                
+                # Show success message and rerun to display updated article
+                st.success("Article updated successfully!")
+                st.rerun()
+                
+            except Exception as e:
+                st.error(f"Error editing article: {str(e)}")
+    
+    elif edit_button and not edit_prompt.strip():
+        st.warning("Please enter your editing instructions.")
+    
+    # Quick edit buttons for common requests
+    st.markdown("**Quick Edit Options:**")
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        if st.button("📏 Make Shorter"):
+            with st.spinner("Making article shorter..."):
+                edited_article = edit_article_with_prompt(st.session_state.generated_article, "Make this article shorter and more concise while keeping the key information.")
+                st.session_state.generated_article = edited_article
+                st.rerun()
+    
+    with col2:
+        if st.button("🎯 More Formal"):
+            with st.spinner("Making article more formal..."):
+                edited_article = edit_article_with_prompt(st.session_state.generated_article, "Make this article more formal and professional in tone.")
+                st.session_state.generated_article = edited_article
+                st.rerun()
+    
+    with col3:
+        if st.button("⚡ More Exciting"):
+            with st.spinner("Making article more exciting..."):
+                edited_article = edit_article_with_prompt(st.session_state.generated_article, "Make this article more exciting and engaging while keeping it factual.")
+                st.session_state.generated_article = edited_article
+                st.rerun()
+    
+    with col4:
+        if st.button("📊 Add Stats Focus"):
+            with st.spinner("Adding statistics focus..."):
+                edited_article = edit_article_with_prompt(st.session_state.generated_article, "Focus more on statistics and numerical data if available in the original content.")
+                st.session_state.generated_article = edited_article
+                st.rerun()
