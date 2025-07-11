@@ -48,41 +48,46 @@ def extract_frames(video_path, output_folder, frame_rate=1):
 def analyze_and_score_image(image_path):
     with open(image_path, "rb") as f:
         img_base64 = base64.b64encode(f.read()).decode('utf-8')
-    payload = {
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": (
-                            "Describe what is happening in this image. "
-                            "Then, on a separate line, rate its importance to a sports news article on a scale of 1 to 10. "
-                            "Format your response exactly like:\n\n"
-                            "Description: <your description>\nImportance: <score>"
-                        )
-                    },
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:image/jpeg;base64,{img_base64}"}
-                    }
-                ]
-            }
-        ],
-        "max_tokens": 400
-    }
-    response = requests.post(DEPLOYMENT_URL, headers=HEADERS, data=json.dumps(payload))
-    if response.status_code == 200:
-        content = response.json()['choices'][0]['message']['content']
-        try:
-            lines = content.strip().splitlines()
-            desc = next(line for line in lines if line.lower().startswith("description:")).split(":", 1)[1].strip()
-            score = int(next(line for line in lines if line.lower().startswith("importance:")).split(":", 1)[1].strip())
-            return desc, score
-        except:
-            return "[Parsing Error]", 0
-    else:
-        return f"[API Error: {response.status_code}]", 0
+        payload = {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": (
+                        "This is a frame from a football (soccer) match video. "
+                        "Identify if any of the following important events are occurring:\n"
+                        "- Goal being scored\n"
+                        "- Goal celebration\n"
+                        "- Fan reaction\n"
+                        "- Referee decision (e.g., red card)\n"
+                        "- Final moments of the match (e.g., victory)\n\n"
+                        "If such an event is visible, describe it clearly. "
+                        "Then, on a separate line, rate its importance for a sports news article from 1 to 10.\n"
+                        "Goal-scoring and match-winning moments should receive the highest scores.\n\n"
+                        "Format the response strictly as:\n"
+                        "Description: <your description>\nImportance: <score>"
+                    )
+                }
+            ],
+            "max_tokens": 400
+        }
+        response = requests.post(DEPLOYMENT_URL, headers=HEADERS, data=json.dumps(payload))
+        if response.status_code == 200:
+            content = response.json()['choices'][0]['message']['content']
+            try:
+                lines = content.strip().splitlines()
+                desc_line = next(line for line in lines if line.lower().startswith("description:"))
+                score_line = next(line for line in lines if line.lower().startswith("importance:"))
+
+                desc = desc_line.split(":", 1)[1].strip()
+                try:
+                    score = int(score_line.split(":", 1)[1].strip())
+                except:
+                    score = 0  # fallback
+                return desc, score
+            except:
+                return "[Parsing Error]", 0
+        else:
+            return f"[API Error: {response.status_code}]", 0
 
 def transcribe_audio(video_path, audio_output):
     ffmpeg_command = [
@@ -134,24 +139,34 @@ if video_file is not None:
     image_descriptions = []
     scored_frames = []
 
-    for frame in frame_files[:10]:  # Limit to 10 frames for efficiency
+    for frame in frame_files[:10]:  # Analyze first 10 frames
         desc, score = analyze_and_score_image(frame)
-        image_descriptions.append(desc)
-        scored_frames.append((score, frame, desc))
+        if desc != "[Parsing Error]":
+            image_descriptions.append(desc)
+            scored_frames.append({
+                "score": score,
+                "frame_path": frame,
+                "description": desc
+            })
 
-    scored_frames.sort(reverse=True, key=lambda x: x[0])
-    top_score, top_frame, top_desc = scored_frames[0]
+    if not scored_frames:
+        st.error("❌ No valid frame analysis found.")
+    else:
+        top_frame_data = max(scored_frames, key=lambda x: x['score'])
+        top_frame = top_frame_data['frame_path']
+        top_score = top_frame_data['score']
+        top_desc = top_frame_data['description']
 
-    st.info("🎧 Extracting and transcribing audio...")
-    audio_path = "temp_audio.wav"
-    transcript = transcribe_audio(video_path, audio_path)
+        st.info("🎧 Transcribing audio from video...")
+        audio_path = "temp_audio.wav"
+        transcript = transcribe_audio(video_path, audio_path)
 
-    st.info("📝 Generating final news article...")
-    article = generate_combined_article(transcript, image_descriptions)
+        st.info("📝 Generating final news article...")
+        article = generate_combined_article(transcript, image_descriptions)
 
-    st.subheader("📰 Final Generated News Article")
-    st.image(top_frame, caption=f"🖼️ Key Frame (Score: {top_score})", use_column_width=True)
-    st.write(article)
+        st.subheader("📰 Final Generated News Article")
+        st.image(top_frame, caption=f"🖼️ Key Frame (Importance Score: {top_score})", use_container_width=True)
+        st.write(article)
 
     os.remove(video_path)
     if os.path.exists(audio_path):
