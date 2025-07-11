@@ -90,15 +90,15 @@ def describe_image_with_scoring(image_path, timestamp):
                             "Analyze this football match frame and provide:\n"
                             "1. A detailed description of what's happening\n"
                             "2. An importance score (1-10) based on these criteria:\n"
-                            "   PRIORITIZE THE CAUSE OF EVENTS, NOT THE RESULT:\n"
-                            "   - 10: Player actively kicking/hitting the ball toward goal, penalty kick being taken\n"
-                            "   - 9: Player about to shoot, ball approaching goal line\n"
-                            "   - 8: Player setting up for shot, crucial defensive action\n"
+                            "   CRITICAL: WE WANT THE MOMENT OF ACTION, NOT THE RESULT:\n"
+                            "   - 10: Player's foot making contact with ball for a shot, player striking the ball\n"
+                            "   - 9: Player in shooting motion, about to kick the ball\n"
+                            "   - 8: Player preparing to shoot, ball approaching player's foot\n"
                             "   - 7: Corner kick being taken, free kick setup\n"
                             "   - 6: Regular play, passing, running\n"
-                            "   - 4-5: Ball already in net, celebration after goal\n"
-                            "   - 1-3: Players standing, crowd shots, referee walking\n\n"
-                            "IMPORTANT: Score the ACTION of scoring higher than the celebration or ball in net.\n\n"
+                            "   - 2-3: Ball already in net, goal celebration, players celebrating\n"
+                            "   - 1: Players standing, crowd shots, referee walking\n\n"
+                            "ABSOLUTELY CRITICAL: If you see the ball already in the goal net or players celebrating a goal, give it a LOW score (2-3). We want the SHOOTING ACTION, not the goal result.\n\n"
                             "Format your response as:\n"
                             "DESCRIPTION: [your description]\n"
                             "SCORE: [number 1-10]\n"
@@ -288,15 +288,13 @@ if video_file is not None:
                 st.info("📝 Generating article...")
                 article = generate_article(transcript, all_frame_data, global_best_frame)
                 
-                # Display results
+                # Display results - Clean output only
                 st.subheader("📰 Generated News Article")
                 
                 if global_best_frame:
                     st.image(global_best_frame['image_path'], 
-                            caption="🖼️ Key Moment from the Match", 
                             use_container_width=True)
                 
-                st.write("---")
                 st.write(article)
                 
                 # Cleanup
