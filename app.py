@@ -90,11 +90,15 @@ def describe_image_with_scoring(image_path, timestamp):
                             "Analyze this football match frame and provide:\n"
                             "1. A detailed description of what's happening\n"
                             "2. An importance score (1-10) based on these criteria:\n"
-                            "   - 10: Goal being scored, penalty kick, red card\n"
-                            "   - 8-9: Shot on goal, yellow card, crucial save\n"
-                            "   - 6-7: Corner kick, free kick, player celebration\n"
-                            "   - 4-5: Regular play, passing, running\n"
+                            "   PRIORITIZE THE CAUSE OF EVENTS, NOT THE RESULT:\n"
+                            "   - 10: Player actively kicking/hitting the ball toward goal, penalty kick being taken\n"
+                            "   - 9: Player about to shoot, ball approaching goal line\n"
+                            "   - 8: Player setting up for shot, crucial defensive action\n"
+                            "   - 7: Corner kick being taken, free kick setup\n"
+                            "   - 6: Regular play, passing, running\n"
+                            "   - 4-5: Ball already in net, celebration after goal\n"
                             "   - 1-3: Players standing, crowd shots, referee walking\n\n"
+                            "IMPORTANT: Score the ACTION of scoring higher than the celebration or ball in net.\n\n"
                             "Format your response as:\n"
                             "DESCRIPTION: [your description]\n"
                             "SCORE: [number 1-10]\n"
@@ -288,34 +292,12 @@ if video_file is not None:
                 st.subheader("📰 Generated News Article")
                 
                 if global_best_frame:
-                    col1, col2 = st.columns([1, 1])
-                    
-                    with col1:
-                        st.image(global_best_frame['image_path'], 
-                                caption=f"🖼️ Key Moment (Score: {global_best_frame['score']}/10)", 
-                                use_container_width=True)
-                    
-                    with col2:
-                        st.write("**Frame Analysis:**")
-                        st.write(f"**Description:** {global_best_frame['description']}")
-                        st.write(f"**Importance Score:** {global_best_frame['score']}/10")
-                        st.write(f"**Reason:** {global_best_frame['reason']}")
-                        st.write(f"**Timestamp:** ~{global_best_frame['timestamp']} seconds")
+                    st.image(global_best_frame['image_path'], 
+                            caption="🖼️ Key Moment from the Match", 
+                            use_container_width=True)
                 
                 st.write("---")
                 st.write(article)
-                
-                # Optional: Show all analyzed frames
-                with st.expander("🔍 View All Analyzed Frames"):
-                    for i, frame_data in enumerate(all_frame_data):
-                        st.write(f"**Frame {i+1}** (Score: {frame_data['score']}/10)")
-                        st.write(f"Description: {frame_data['description']}")
-                        st.write(f"Reason: {frame_data['reason']}")
-                        st.write("---")
-                
-                # Optional: Show transcript
-                with st.expander("📝 View Audio Transcript"):
-                    st.write(transcript)
                 
                 # Cleanup
                 if os.path.exists(audio_path):
