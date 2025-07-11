@@ -212,6 +212,32 @@ def transcribe_audio(video_path, audio_output):
     except Exception as e:
         return f"[Error transcribing audio: {str(e)}]"
 
+def generate_short_caption(frame_description):
+    """Generate a short 1-2 line caption for the key frame"""
+    prompt = f"""
+Based on this detailed frame analysis, write a short 1-2 line caption that captures the main action happening in this football match moment.
+
+Frame analysis: {frame_description}
+
+Write a concise caption (maximum 2 lines) that describes the key action:
+"""
+    
+    payload = {
+        "messages": [
+            {"role": "user", "content": prompt}
+        ],
+        "max_tokens": 50
+    }
+    
+    try:
+        response = requests.post(DEPLOYMENT_URL, headers=HEADERS, data=json.dumps(payload))
+        if response.status_code == 200:
+            return response.json()['choices'][0]['message']['content'].strip()
+    except Exception as e:
+        return "Key moment from the match"
+    
+    return "Key moment from the match"
+
 def generate_article(transcript, all_descriptions, best_frame_data):
     """Generate news article from transcript and descriptions"""
     # Prepare descriptions text
@@ -292,8 +318,11 @@ if video_file is not None:
                 st.subheader("📰 Generated News Article")
                 
                 if global_best_frame:
-                    st.image(global_best_frame['image_path'], 
-                            use_container_width=True)
+                    st.image(global_best_frame['image_path'], use_container_width=True)
+                    
+                    # Generate short caption for the frame
+                    short_caption = generate_short_caption(global_best_frame['description'])
+                    st.caption(short_caption)
                 
                 st.write(article)
                 
