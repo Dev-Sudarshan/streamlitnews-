@@ -1,3 +1,5 @@
-venv/
-env/
 extracted_frames/
+frames/
+*.wav
+venv/
+.env
