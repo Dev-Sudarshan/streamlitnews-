@@ -22,9 +22,23 @@ os.environ["PATH"] += os.pathsep + os.path.dirname(FFMPEG_PATH)
 # --- Streamlit UI ---
 st.set_page_config(page_title="Sports Video to News Generator")
 st.title("🏆 Sports Video ➤ News Article Generator")
-st.markdown("Upload a sports video, and this tool will analyze frames and audio to generate a professional news article.")
+st.markdown("Upload a sports video or provide raw match data to generate a professional news article.")
 
-video_file = st.file_uploader("📤 Upload Sports Video", type=["mp4", "mkv", "mov", "avi"])
+# Create tabs for different input methods
+tab1, tab2 = st.tabs(["📹 Video Upload", "📝 Raw Data Input"])
+
+with tab1:
+    st.markdown("Upload a sports video, and this tool will analyze frames and audio to generate a professional news article.")
+    video_file = st.file_uploader("📤 Upload Sports Video", type=["mp4", "mkv", "mov", "avi"])
+
+with tab2:
+    st.markdown("Enter raw match data, commentary, or any text information about the match to generate a news article.")
+    raw_match_data = st.text_area(
+        "📝 Enter Match Data", 
+        placeholder="Enter match commentary, statistics, player information, or any relevant match details...",
+        height=200
+    )
+    generate_from_text = st.button("Generate Article from Text Data")
 
 # --- Functions ---
 def extract_frame_groups(video_path, output_folder, fps=1, group_size=5):
@@ -212,6 +226,40 @@ def transcribe_audio(video_path, audio_output):
     except Exception as e:
         return f"[Error transcribing audio: {str(e)}]"
 
+def generate_article_from_text(raw_data):
+    """Generate news article from raw text data only"""
+    prompt = f"""
+Write a factual sports news article based on the raw match data provided below.
+
+KEY INSTRUCTIONS:
+- Only use information provided below - do not invent any details
+- Structure: Headline, then 2-3 paragraphs
+- Be concise but informative
+- If information is unclear, say so rather than guessing
+- Focus on the most important events mentioned in the data
+
+RAW MATCH DATA:
+{raw_data}
+
+Write the article now:
+"""
+    
+    payload = {
+        "messages": [
+            {"role": "user", "content": prompt}
+        ],
+        "max_tokens": 500
+    }
+    
+    try:
+        response = requests.post(DEPLOYMENT_URL, headers=HEADERS, data=json.dumps(payload))
+        if response.status_code == 200:
+            return response.json()['choices'][0]['message']['content']
+    except Exception as e:
+        st.error(f"Error generating article: {str(e)}")
+    
+    return "[Error generating article]"
+
 def generate_short_caption(frame_description):
     """Generate a short 1-2 line caption for the key frame"""
     prompt = f"""
@@ -286,6 +334,7 @@ Write the article now:
     return "[Error generating article]"
 
 # --- Main Execution ---
+# Handle video upload
 if video_file is not None:
     with NamedTemporaryFile(delete=False, suffix=".mp4") as temp_video:
         temp_video.write(video_file.read())
@@ -342,3 +391,20 @@ if video_file is not None:
             os.remove(video_path)
         if os.path.exists("frames"):
             shutil.rmtree("frames")
+
+# Handle raw text input
+if generate_from_text and raw_match_data.strip():
+    st.info("📝 Generating article from text data...")
+    
+    try:
+        article = generate_article_from_text(raw_match_data)
+        
+        # Display results - Clean output only
+        st.subheader("📰 Generated News Article")
+        st.write(article)
+        
+    except Exception as e:
+        st.error(f"An error occurred: {str(e)}")
+
+elif generate_from_text and not raw_match_data.strip():
+    st.warning("Please enter some match data in the text area.")
