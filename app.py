@@ -25,7 +25,7 @@ st.markdown("Upload a sports video, and this tool will analyze frames and audio 
 
 video_file = st.file_uploader("📤 Upload Sports Video", type=["mp4", "mkv", "mov", "avi"])
 
-# --- Functions ---
+# --- Helper Functions ---
 def extract_frames(video_path, output_folder, frame_rate=1):
     os.makedirs(output_folder, exist_ok=True)
     vidcap = cv2.VideoCapture(video_path)
@@ -45,7 +45,7 @@ def extract_frames(video_path, output_folder, frame_rate=1):
     vidcap.release()
     return [os.path.join(output_folder, f) for f in sorted(os.listdir(output_folder)) if f.endswith(".jpg")]
 
-def analyze_image(image_path):
+def analyze_and_score_image(image_path):
     with open(image_path, "rb") as f:
         img_base64 = base64.b64encode(f.read()).decode('utf-8')
     payload = {
@@ -53,8 +53,19 @@ def analyze_image(image_path):
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": "Describe what is happening in this image."},
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_base64}"}}
+                    {
+                        "type": "text",
+                        "text": (
+                            "Describe what is happening in this image. "
+                            "Then, on a separate line, rate its importance to a sports news article on a scale of 1 to 10. "
+                            "Format your response exactly like:\n\n"
+                            "Description: <your description>\nImportance: <score>"
+                        )
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/jpeg;base64,{img_base64}"}
+                    }
                 ]
             }
         ],
@@ -62,9 +73,16 @@ def analyze_image(image_path):
     }
     response = requests.post(DEPLOYMENT_URL, headers=HEADERS, data=json.dumps(payload))
     if response.status_code == 200:
-        return response.json()['choices'][0]['message']['content']
+        content = response.json()['choices'][0]['message']['content']
+        try:
+            lines = content.strip().splitlines()
+            desc = next(line for line in lines if line.lower().startswith("description:")).split(":", 1)[1].strip()
+            score = int(next(line for line in lines if line.lower().startswith("importance:")).split(":", 1)[1].strip())
+            return desc, score
+        except:
+            return "[Parsing Error]", 0
     else:
-        return f"[Error analyzing image: {response.status_code}]"
+        return f"[API Error: {response.status_code}]", 0
 
 def transcribe_audio(video_path, audio_output):
     ffmpeg_command = [
@@ -112,10 +130,17 @@ if video_file is not None:
     frames_folder = "extracted_frames"
     frame_files = extract_frames(video_path, frames_folder, frame_rate=1)
 
-    st.info("🖼️ Analyzing image frames...")
+    st.info("🖼️ Analyzing and scoring image frames...")
     image_descriptions = []
-    for frame in frame_files[:6]:  # Limit to 6 frames for speed
-        image_descriptions.append(analyze_image(frame))
+    scored_frames = []
+
+    for frame in frame_files[:10]:  # Limit to 10 frames for efficiency
+        desc, score = analyze_and_score_image(frame)
+        image_descriptions.append(desc)
+        scored_frames.append((score, frame, desc))
+
+    scored_frames.sort(reverse=True, key=lambda x: x[0])
+    top_score, top_frame, top_desc = scored_frames[0]
 
     st.info("🎧 Extracting and transcribing audio...")
     audio_path = "temp_audio.wav"
@@ -125,6 +150,7 @@ if video_file is not None:
     article = generate_combined_article(transcript, image_descriptions)
 
     st.subheader("📰 Final Generated News Article")
+    st.image(top_frame, caption=f"🖼️ Key Frame (Score: {top_score})", use_column_width=True)
     st.write(article)
 
     os.remove(video_path)
