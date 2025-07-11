@@ -8,6 +8,7 @@ import requests
 import json
 from tempfile import NamedTemporaryFile
 import shutil
+import time
 
 # --- Settings ---
 API_KEY = "9950e10d61694f288b5015e16c86112c"
@@ -41,6 +42,15 @@ with tab2:
     generate_from_text = st.button("Generate Article from Text Data")
 
 # --- Functions ---
+def image_to_base64(image_path):
+    """Convert image to base64 string for storage"""
+    try:
+        with open(image_path, "rb") as img_file:
+            return base64.b64encode(img_file.read()).decode()
+    except Exception as e:
+        st.error(f"Error converting image to base64: {str(e)}")
+        return None
+
 def extract_frame_groups(video_path, output_folder, fps=1, group_size=5):
     """Extract frames from video and group them"""
     if os.path.exists(output_folder):
@@ -374,8 +384,8 @@ EDITED ARTICLE:
 # Initialize session state for article storage
 if 'generated_article' not in st.session_state:
     st.session_state.generated_article = None
-if 'article_image' not in st.session_state:
-    st.session_state.article_image = None
+if 'article_image_base64' not in st.session_state:
+    st.session_state.article_image_base64 = None
 if 'article_caption' not in st.session_state:
     st.session_state.article_caption = None
 
@@ -408,13 +418,15 @@ if video_file is not None:
                 st.info("📝 Generating article...")
                 article = generate_article(transcript, all_frame_data, global_best_frame)
                 
-                # Store in session state
+                # Store in session state with base64 image
                 st.session_state.generated_article = article
                 if global_best_frame:
-                    st.session_state.article_image = global_best_frame['image_path']
+                    # Convert image to base64 for persistent storage
+                    image_base64 = image_to_base64(global_best_frame['image_path'])
+                    st.session_state.article_image_base64 = image_base64
                     st.session_state.article_caption = generate_short_caption(global_best_frame['description'])
                 
-                # Cleanup
+                # Cleanup audio file
                 if os.path.exists(audio_path):
                     os.remove(audio_path)
                     
@@ -440,7 +452,7 @@ if generate_from_text and raw_match_data.strip():
         
         # Store in session state
         st.session_state.generated_article = article
-        st.session_state.article_image = None
+        st.session_state.article_image_base64 = None
         st.session_state.article_caption = None
         
     except Exception as e:
@@ -454,10 +466,15 @@ if st.session_state.generated_article:
     st.subheader("📰 Generated News Article")
     
     # Display image if available
-    if st.session_state.article_image and os.path.exists(st.session_state.article_image):
-        st.image(st.session_state.article_image, use_container_width=True)
-        if st.session_state.article_caption:
-            st.caption(st.session_state.article_caption)
+    if st.session_state.article_image_base64:
+        try:
+            # Decode base64 image and display
+            image_data = base64.b64decode(st.session_state.article_image_base64)
+            st.image(image_data, use_container_width=True)
+            if st.session_state.article_caption:
+                st.caption(st.session_state.article_caption)
+        except Exception as e:
+            st.error(f"Error displaying image: {str(e)}")
     
     # Display the article
     st.write(st.session_state.generated_article)
